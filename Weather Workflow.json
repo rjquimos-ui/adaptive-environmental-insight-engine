@@ -1,0 +1,204 @@
+{
+  "name": "Weather Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        0
+      ],
+      "id": "c116010d-e322-462e-a09c-bb2d2b4a90c8",
+      "name": "Manual Trigger"
+    },
+    {
+      "parameters": {
+        "url": "http://ip-api.com/json",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        16,
+        0
+      ],
+      "id": "b1f01f9c-1fe1-4aba-a596-4ba2490f82c1",
+      "name": "IP Geolocation Engine"
+    },
+    {
+      "parameters": {
+        "url": "https://api.openweathermap.org/data/2.5/weather",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $(\"IP Geolocation Engine\").first().json.city }}"
+            },
+            {
+              "name": "appid",
+              "value": "53014309bb3802ec63d47f4cd60a94b8"
+            },
+            {
+              "name": "units",
+              "value": "metric"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        240,
+        0
+      ],
+      "id": "d7957072-3d9f-4927-9842-89767048d79e",
+      "name": "Weather Data Ingestion"
+    },
+    {
+      "parameters": {
+        "url": "https://api.openweathermap.org/data/2.5/air_pollution",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "lat",
+              "value": "={{ $(\"IP Geolocation Engine\").first().json.lat }}"
+            },
+            {
+              "name": "lon",
+              "value": "={{ $(\"IP Geolocation Engine\").first().json.lon }}"
+            },
+            {
+              "name": "appid",
+              "value": "53014309bb3802ec63d47f4cd60a94b8"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        464,
+        0
+      ],
+      "id": "d8cec655-1b81-4ad3-a7ff-3b995e0837f0",
+      "name": "Air Pollution Data Ingestion"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==============================================================================\n// ADVANCED FUSION & VISUALS ENGINE\n// This node merges two distinct APIs and generates dynamic visual themes.\n// ==============================================================================\n\n// 1. Data Ingestion: Capture input from ALL previous nodes\nconst weatherData = $items(\"Weather Data Ingestion\")[0].json; // Fetch by node name\nconst aqiDataRaw = $items(\"Air Pollution Data Ingestion\")[0].json; // Fetch by node name\n\n// 2. Data Synthesis: Merge the core results\nconst mergedData = {\n  city: weatherData.name,\n  temperature: Math.round(weatherData.main.temp),\n  conditionMain: weatherData.weather[0].main, // \"Clear\", \"Rain\", etc.\n  conditionDesc: weatherData.weather[0].description, // \"light rain\"\n  aqiValue: aqiDataRaw.list[0].main.aqi // 1-5 Scale\n};\n\n// ==============================================================================\n// VISUAL ENGINE: DEFINE COLOR THEMES BASED ON WEATHER (Logic Path)\n// ==============================================================================\nlet themeColor;\nconst mainSky = mergedData.conditionMain.toLowerCase();\n\nif (mainSky.includes('clear')) {\n  // Clear Skies: Warm Orange theme\n  themeColor = \"#FF8C00\"; \n} else if (mainSky.includes('cloud')) {\n  // Cloudy: Neutral Slate Gray theme\n  themeColor = \"#778899\";\n} else if (mainSky.includes('rain') || mainSky.includes('drizzle')) {\n  // Rain/Drizzle: Cool Blues theme\n  themeColor = \"#1E90FF\";\n} else if (mainSky.includes('thunder') || mainSky.includes('storm')) {\n  // Thunderstorm: Dark Electric theme\n  themeColor = \"#4B0082\";\n} else if (mainSky.includes('snow') || mainSky.includes('mist') || mainSky.includes('haze')) {\n  // Snow/Mist/Haze: Soft Whites and Silvers\n  themeColor = \"#F0F8FF\"; \n} else {\n  // Default fallback (e.g., Extreme cases): Safe dark theme\n  themeColor = \"#333333\";\n}\n\n// ==============================================================================\n// LOGIC ENGINE: CLASSIFY AIR QUALITY & GENERATE ADVICE\n// ==============================================================================\nlet aqiRating, aqiColor, aqiAdvice;\nconst rawAqi = mergedData.aqiValue;\n\nswitch (rawAqi) {\n  case 1:\n    aqRating = \"Good\";\n    aqiColor = \"#00C853\"; // Vibrant Green\n    aqiAdvice = \"Air is fresh and clean. Enjoy your outdoor commute!\";\n    break;\n  case 2:\n    aqRating = \"Fair\";\n    aqiColor = \"#FBC02D\"; // Rich Yellow\n    aqiAdvice = \"Air is acceptable, but sensitive groups should minimize extended outdoor time.\";\n    break;\n  case 3:\n    aqRating = \"Moderate\";\n    aqiColor = \"#FF9800\"; // Clean Orange\n    aqiAdvice = \"General population may experience minor discomfort. Consider indoor activity if sensitive.\";\n    break;\n  case 4:\n    aqRating = \"Poor\";\n    aqiColor = \"#F44336\"; // Solid Red\n    aqiAdvice = \"General population should avoid prolonged outdoor exertion. Sensitive groups stay indoors.\";\n    break;\n  case 5:\n    aqRating = \"Very Poor\";\n    aqiColor = \"#B71C1C\"; // Deep Dark Red\n    aqiAdvice = \"EMERGENCY ALERT: Air quality is hazardous. All individuals must avoid any outdoor physical activity.\";\n    break;\n  default:\n    aqRating = \"Data Error\";\n    aqiColor = \"#CCCCCC\"; // Neutral Gray\n    aqiAdvice = \"Air quality data currently unavailable.\";\n}\n\n// ==============================================================================\n// RETURN CONSOLIDATED PAYLOAD FOR THE EMAIL NODE\n// ==============================================================================\nreturn {\n  json: {\n    city: mergedData.city,\n    temperature: mergedData.temperature,\n    condition: mergedData.conditionDesc,\n    \n    // Dynamic Visuals Data\n    themeColor: themeColor,\n    iconUrl: 'https://openweathermap.org/img/wn/' + weatherData.weather[0].icon + '@2x.png',\n    \n    // Advanced Data Data\n    airQualityStatus: aqRating,\n    airQualityColor: aqiColor,\n    airQualityAdvice: aqiAdvice\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        0
+      ],
+      "id": "aa4a33d7-9f10-4b82-bdf1-c4fc1b153672",
+      "name": "Data Synthesis & Theme Engine"
+    },
+    {
+      "parameters": {
+        "fromEmail": "rj.quimos@gmail.com",
+        "toEmail": "rpquimosquimos.student@asiancollege.edu.ph",
+        "subject": "=🌤️ Daily {{ $json.city }} Weather Report",
+        "html": "=<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Your Advanced {{ $json.city }} Weather & AQI Insight</title>\n</head>\n<body style=\"font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f7f9fa; margin: 0; padding: 20px;\">\n  \n  <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color: #f7f9fa; max-width: 600px; margin: 0 auto; border-radius: 12px; border: 1px solid #dcdcdc; box-shadow: 0 4px 12px rgba(0,0,0,0.05);\">\n    <tr>\n      <td style=\"padding: 0;\">\n        \n        <div style=\"background-color: {{ $json.themeColor }}; color: white; padding: 25px; border-top-left-radius: 12px; border-top-right-radius: 12px; text-align: center;\">\n          <h1 style=\"margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px;\">Your Daily {{ $json.city }} Insight</h1>\n          <p style=\"margin: 5px 0 0; font-size: 16px; font-weight: 400; color: rgba(255,255,255,0.8);\">Automated Report by your n8n Workflow</p>\n        </div>\n\n        <div style=\"padding: 30px; background-color: white;\">\n          \n          <div style=\"margin-bottom: 25px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n              <tr>\n                <td style=\"vertical-align: middle;\">\n                  <img src=\"{{ $json.iconUrl }}\" alt=\"Weather Condition\" style=\"width: 70px; height: 70px; display: block; border-radius: 50%; border: 2px solid {{ $json.themeColor }}; padding: 3px; background-color: white; box-shadow: 0 2px 6px rgba(0,0,0,0.08);\">\n                </td>\n                <td style=\"vertical-align: middle; padding-left: 20px;\">\n                  <h2 style=\"margin: 0; font-size: 20px; font-weight: 700; color: #333;\">Weather in {{ $json.city }}</h2>\n                  <p style=\"margin: 5px 0 0; font-size: 16px; font-weight: 400; color: #555;\">It is currently <strong>{{ $json.temperature }}°C</strong> with <em>{{ $json.condition }}</em>.</p>\n                </td>\n              </tr>\n            </table>\n          </div>\n          \n          <hr style=\"border: 0; border-top: 1px solid #e0e0e0; margin: 25px 0;\">\n\n          <div>\n            <h2 style=\"margin: 0 0 15px; font-size: 20px; font-weight: 700; color: #333;\">Air Quality Report</h2>\n            <div style=\"padding: 15px; border-radius: 8px; border: 1px solid {{ $json.airQualityColor }}; background-color: white; box-shadow: 0 1px 4px rgba(0,0,0,0.04);\">\n              <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n                <tr>\n                  <td width=\"35%\" style=\"vertical-align: middle; text-align: center;\">\n                    <span style=\"display: inline-block; background-color: {{ $json.airQualityColor }}; color: white; padding: 10px 18px; font-size: 18px; font-weight: 700; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px;\">{{ $json.airQualityStatus }}</span>\n                  </td>\n                  <td width=\"65%\" style=\"vertical-align: middle; padding-left: 20px;\">\n                    <p style=\"margin: 0; font-size: 15px; font-weight: 500; color: #333;\">{{ $json.airQualityAdvice }}</p>\n                  </td>\n                </tr>\n              </table>\n            </div>\n          </div>\n\n          <p style=\"margin-top: 35px; font-size: 12px; color: #888; text-align: center;\">You are receiving this automated insight as part of your custom n8n integration portfolio.</p>\n        </div>\n      </td>\n    </tr>\n  </table>\n\n</body>\n</html>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        912,
+        0
+      ],
+      "id": "5beb119a-810a-45a6-99e7-d0b9f544e1e1",
+      "name": "Dispatch HTML Insight Email",
+      "webhookId": "8eb1dbc1-805f-44d5-ae44-75169576bc6f",
+      "credentials": {
+        "smtp": {
+          "id": "8WjwYYPAPJP7mux3",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "IP Geolocation Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IP Geolocation Engine": {
+      "main": [
+        [
+          {
+            "node": "Weather Data Ingestion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weather Data Ingestion": {
+      "main": [
+        [
+          {
+            "node": "Air Pollution Data Ingestion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Air Pollution Data Ingestion": {
+      "main": [
+        [
+          {
+            "node": "Data Synthesis & Theme Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Synthesis & Theme Engine": {
+      "main": [
+        [
+          {
+            "node": "Dispatch HTML Insight Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch HTML Insight Email": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "e90a1506-3a40-4703-87ad-98d22a67dccd",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "2b12135670ea4443e69812b5aad22a64a697916a863067bd5a463f35167516c3"
+  },
+  "id": "rpbFucXpEzCUN5r0",
+  "tags": []
+}
